@@ -204,17 +204,14 @@ Se observa que el mejor valor de k es 4, por lo que será el que utilizaremos.
 
 ```{r}
 
-beats_kmeans <- kmeans(beatsanalize, 4)
+beats_kmeans2 <- kmeans(beatsanalize, 4)
 
-beatsanalize$clus <- beats_kmeans$cluster %>% as.factor()
+beatsanalize$clus <- beats_kmeans2$cluster %>% as.factor()
 
 ggplot(beatsanalize, aes(energy, tempo, color=clus)) +
    geom_point(alpha=0.5, show.legend = T) +
    theme_bw()
 
-info_clus <- beats_kmeans$centers
-
-info_clus
 
 ```
 

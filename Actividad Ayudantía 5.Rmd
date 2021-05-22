@@ -1,0 +1,287 @@
+---
+title: "Proyecto 2 Data Mining"
+author: "Diego Aguilar Dañobeitía"
+date: "21/5/2021"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Cargar los datos
+
+Lo primero que se tiene que hacer para iniciar el análisis de los datos es cargar el archivo que los contiene, lo que se guardará en la variable "data":
+
+```{r}
+
+setwd("D:/Documentos/Files & Stuff/U/Data Mining/Proyecto 2")
+
+load("beats.RData")
+
+head(beats)
+
+str(beats)
+
+dim(beats)
+
+```
+
+Por lo que se puede observar, existen 447622 datos con 36 atributos.
+
+## Cargar las librerías
+
+Luego, se procede a cargar las librerías necesarias:
+
+```{r}
+
+library(tidyverse)
+
+library(factoextra)
+
+library(flexclust)
+
+library(cluster)
+
+library(R.utils)
+
+library(scales)
+
+```
+
+## Pre procesamiento de los datos
+
+Se procede a limpiar los datos en base al objetivo: realizar una lista de reproducción de 3 horas o más a partir de una sola canción, con las canciones contenidas en "beats.Rdata", tomando en cuenta las variables que están en este archivo. Para esto, se van a tomar las variables de "energy" y "tempo", que son las que mayor similitud o diferencia pueden mostrar entre canciones, musicalmente hablando, la variable "external_urls.spotify" para identificarlas, y la variable "duration_ms", con la que vamos a determinar la duración de la lista de reproducción.
+
+
+### Eliminación de entidades duplicadas
+
+Primero, se procede a eliminar entidades que poseen los mismos valores para cada variable entre sí:
+
+```{r}
+
+beatsunique <- unique(beats)
+
+dim(beatsunique)
+
+```
+
+Se observa que disminuyó el número de entidades a 446563.
+
+### Eliminación de entidades con valores faltantes
+
+Luego se necesita limpiar las entidades que tienen valores faltantes (NA) de los datos:
+
+```{r}
+
+beatsclean <- na.omit(beatsunique)
+
+dim(beatsclean)
+
+```
+
+Se observa que ahora existen 271748 datos, casi la mitad de los datos anteriores
+
+### Reducción de dimensionalidad
+
+Después, según lo anterior, las únicas variables importantes serían las de "energy", "tempo", "duration_ms" y "external_urls.spotify", por lo que se procede a eliminar las restantes:
+
+```{r}
+
+beatsred <- beatsclean[c("energy", "tempo", "duration_ms", "external_urls.spotify")]
+
+dim(beatsred)
+
+```
+
+Se observa que ahora se cuenta con los mismos 271748 datos, pero ahora con sólo 4 variables, que son las que se necesitan.
+
+### Sampleo
+
+A continuación, se va a tomar una muestra de la data, debido a que por el tamaño de esta no es posible llevar a cabo los procedimientos analíticos siguientes. Se va a usar una muestra de tamaño 10,000.
+
+```{r}
+
+beatsample <- sample_n(beatsred, 10000)
+
+```
+
+### Escalamiento
+
+Luego, para un correcto análisis posterior, se va a escalar la variable tempo.
+
+```{r}
+
+beatsample$tempo = rescale(beatsample$tempo, to = c(0, 1))
+
+beatsample %>% summary()
+
+```
+
+### Separación de la variable duration_ms del resto
+
+Finalmente, para que se pueda llevar a cabo el análisis, se debe separar la variable correspondiente a la duración y a la url respecto a las que se van a utilizar.
+
+```{r}
+
+beatsinfo = beatsample[c("duration_ms", "external_urls.spotify")]
+
+beatsanalize = beatsample[c("energy", "tempo")]
+
+dim(beatsinfo)
+
+dim(beatsanalize)
+
+str(beatsanalize)
+
+```
+
+
+## Análisis de los datos
+
+Ya que se han limpiado y ordenado los datos de forma correcta, se procede al análisis de este para resolver la problemática planteada en este caso. Para generar la lista de reproducción, se va a realizar un análisis de clusters de K-medias con las 2 variables seleccionadas, tomando después como muestra aleatoria canciones pertenecientes al mismo grupo o cluster que la canción en base a la cual se va a realizar dicha lista, hasta completar las 3 horas.
+
+Se va a realizar un primer intento del análisis K-medias con k = 5.
+
+### Análisis cluster K = 5
+
+```{r}
+
+beats_kmeans <- kmeans(beatsanalize, 5)
+
+beatsanalize$clus <- beats_kmeans$cluster %>% as.factor()
+
+ggplot(beatsanalize, aes(energy, tempo, color=clus)) +
+   geom_point(alpha=0.5, show.legend = T) +
+   theme_bw()
+
+info_clus <- beats_kmeans$centers
+
+info_clus
+
+```
+
+Se puede ver que existen 5 clusters no muy definidos entre sí dada la naturaleza de los datos.
+
+## Evaluación
+
+Ahora vamos a evaluar nuestro análisis para mejorarlo y así lograr que sea más preciso.
+
+### Coeficiente de silueta
+
+Se utilizará esta evaluación para el análisis.
+
+```{r}
+
+beatsSil <- silhouette(beats_kmeans$cluster, dist(beatsanalize))
+summary(beatsSil)
+
+fviz_silhouette(beatsSil) + coord_flip()
+
+```
+
+Luego, se utiliza este para encontrar el mejor valor de k.
+
+```{r}
+
+beatsSil=numeric(30)
+for (k in 2:30){
+  model <- kmeans(beatsanalize, centers = k)
+  temp <- silhouette(model$cluster, dist(beatsanalize))
+  beatsSil[k] <- mean(temp[,3])
+}
+tempDF=data.frame(CS=beatsSil,K=c(1:30))
+
+ggplot(tempDF, aes(x=K, y=CS)) + 
+  geom_line() +
+  scale_x_continuous(breaks=c(1:30))
+
+```
+
+Se observa que el mejor valor de k es 4, por lo que será el que utilizaremos.
+
+### Análisis cluster K = 4
+
+```{r}
+
+beats_kmeans <- kmeans(beatsanalize, 4)
+
+beatsanalize$clus <- beats_kmeans$cluster %>% as.factor()
+
+ggplot(beatsanalize, aes(energy, tempo, color=clus)) +
+   geom_point(alpha=0.5, show.legend = T) +
+   theme_bw()
+
+info_clus <- beats_kmeans$centers
+
+info_clus
+
+```
+
+## Creación de la lista de reproducción
+
+Ahora, con los clusters definidos, se va a elegir una canción al azar y a crear una playlist en base a esta, tomando elementos aleatorios de esta hasta que se cumplan las 3 horas o más. Antes de esto, es necesario fusionar la data de "beatsanalize" con la data de "beatsduration".
+
+### Fusión entre "beats_kmeans" y "beatsduration"
+
+```{r}
+
+beatsanalize$clus <- as.numeric(beatsanalize$clus)
+
+beatsmerge <- merge(beatsanalize, beatsinfo, by = "row.names")
+
+beatsmerge %>% summary()
+
+```
+
+### Selección de una canción al azar
+
+Ahora se va a elegir una canción al azar para basarse en hacer la lista de reproducción
+
+```{r}
+
+songsample <- sample_n(beatsmerge, 1)
+
+str(songsample)
+
+```
+
+### Selección de canciones pertenencientes al mismo cluster
+
+Luego, se van a separar las canciones que pertenecen al cluster de la canción elegida de las demás
+
+```{r}
+
+songcluster <- songsample[1, 4]
+
+print(songcluster)
+
+beatscluster <- beatsmerge[beatsmerge$clus == songcluster, c("external_urls.spotify", "energy", "tempo", "duration_ms", "clus")]
+
+beatscluster %>% summary()
+
+```
+
+### Creación de la lista de reproducción
+
+Ahora, podemos crear una lista de reproducción de al menos 3 horas con estos datos. Procederemos a crearla
+
+```{r}
+
+beatsplaylist <- sample_n(beatscluster, 200)
+
+playlistduration <- sum(beatsplaylist$duration_ms)
+
+playlisthours <- playlistduration/1.08e+7
+
+print(playlisthours)
+
+print(beatsplaylist$external_urls.spotify)
+
+```
+
+Aquí se tiene impresa en pantalla la lista de reproducción con todos los links necesarios, la que dura más de 3 horas.
+
+## Conclusión
+
+Se obtuvo una playlist de más de 3 horas con canciones similares a una canción tomada al azar, tomando como variables para la generación de grupos separados y definidos el tempo y la energía de cada canción.
